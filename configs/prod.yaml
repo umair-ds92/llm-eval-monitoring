@@ -1,0 +1,24 @@
+environment: prod
+
+evaluation:
+  enabled_metrics:
+    - factuality
+    - toxicity
+    - latency
+  suite: regression
+  dataset_path: data/golden/regression.jsonl
+
+thresholds:
+  toxicity_max: 0.1
+  latency_p95_ms: 1500
+
+inference:
+  provider: openai
+  default_model: gpt-4o
+  timeout_s: 20
+  max_retries: 1
+
+monitoring:
+  enabled: true
+  alert_on_violation: true
+

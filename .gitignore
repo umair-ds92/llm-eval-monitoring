@@ -1,0 +1,48 @@
+# ======================
+# Python
+# ======================
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# ======================
+# Environment / Secrets
+# ======================
+.env
+.env.*
+
+# ======================
+# Data (local / large / generated)
+# ======================
+data_local/
+data_tmp/
+*.log
+
+# ======================
+# Notebooks
+# ======================
+.ipynb_checkpoints/
+
+# ======================
+# Build / Packaging
+# ======================
+build/
+dist/
+*.egg-info/
+
+# ======================
+# OS / Editor
+# ======================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

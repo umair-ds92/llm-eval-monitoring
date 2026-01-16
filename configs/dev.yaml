@@ -1,0 +1,26 @@
+environment: dev
+random_seed: 42
+
+evaluation:
+  enabled_metrics:
+    - factuality
+    - toxicity
+    - latency
+  suite: smoke
+  sample_size: 50
+  dataset_path: data/golden/smoke.jsonl
+
+thresholds:
+  toxicity_max: 0.2
+  latency_p95_ms: 2000
+
+inference:
+  provider: openai
+  default_model: gpt-4o-mini
+  timeout_s: 30
+  max_retries: 2
+
+monitoring:
+  enabled: true
+  window_size: 200
+
