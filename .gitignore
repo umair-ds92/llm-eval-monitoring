@@ -7,17 +7,33 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.pyc
+*.pyo
+*.pyd
 
 # Virtual environments
 .venv/
 venv/
 env/
+ENV/
 
 # ======================
 # Environment / Secrets
 # ======================
 .env
 .env.*
+!.env.example
+
+# ======================
+# Database
+# ======================
+*.db
+*.sqlite
+*.sqlite3
+llm_eval.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # ======================
 # Data (local / large / generated)
@@ -25,6 +41,32 @@ env/
 data_local/
 data_tmp/
 *.log
+logs/
+artifacts/reports/*.json
+artifacts/reports/*.html
+!artifacts/reports/.gitkeep
+
+# ======================
+# Machine Learning / Models
+# ======================
+models/
+*.h5
+*.pkl
+*.pth
+*.onnx
+*.pt
+.cache/
+wandb/
+mlruns/
+
+# ======================
+# Testing & Coverage
+# ======================
+.coverage
+htmlcov/
+.tox/
+coverage.xml
+*.cover
 
 # ======================
 # Notebooks
@@ -37,6 +79,7 @@ data_tmp/
 build/
 dist/
 *.egg-info/
+*.egg
 
 # ======================
 # OS / Editor
@@ -45,4 +88,19 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
+# ======================
+# Docker
+# ======================
+.dockerignore
+docker-compose.override.yml
+
+# ======================
+# Temporary files
+# ======================
+tmp/
+temp/
+*.tmp

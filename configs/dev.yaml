@@ -1,26 +1,78 @@
 environment: dev
-random_seed: 42
 
-evaluation:
-  enabled_metrics:
-    - factuality
-    - toxicity
+database:
+  url: "sqlite:///./llm_eval.db"
+  echo: true
+  pool_size: 10
+  max_overflow: 20
+
+models:
+  default: "claude-sonnet-4"
+  timeout: 30
+  max_retries: 3
+  available:
+    - "claude-sonnet-4"
+    - "claude-opus-4"
+    - "gpt-4"
+    - "gpt-4-turbo"
+
+evaluators:
+  enabled:
     - latency
-  suite: smoke
-  sample_size: 50
-  dataset_path: data/golden/smoke.jsonl
+    - toxicity
+    - factuality
+  
+  latency:
+    enabled: true
+    thresholds:
+      mean_ms: 1500
+      p50_ms: 1000
+      p95_ms: 2000
+      p99_ms: 5000
+  
+  toxicity:
+    enabled: true
+    threshold: 0.7
+    model: "unitary/toxic-bert"
+    categories:
+      - "toxic"
+      - "severe_toxic"
+      - "obscene"
+      - "threat"
+      - "insult"
+      - "identity_hate"
+  
+  factuality:
+    enabled: true
+    use_llm_judge: true
+    judge_model: "claude-sonnet-4"
+    threshold: 0.8
+    fallback_to_similarity: true
 
-thresholds:
-  toxicity_max: 0.2
-  latency_p95_ms: 2000
-
-inference:
-  provider: openai
-  default_model: gpt-4o-mini
-  timeout_s: 30
-  max_retries: 2
+cybersecurity:
+  ioc_types:
+    - "ip_address"
+    - "domain"
+    - "url"
+    - "file_hash"
+    - "cve_id"
+    - "malware_family"
+    - "email"
+  
+  threat_intelligence:
+    enabled: false
+    sources: []
 
 monitoring:
   enabled: true
-  window_size: 200
+  alert_cooldown_seconds: 3600
+  metrics_retention_days: 90
 
+alerts:
+  email_enabled: false
+  slack_enabled: false
+  
+logging:
+  level: "INFO"
+  format: "text"
+  file: "logs/llm_eval.log"
