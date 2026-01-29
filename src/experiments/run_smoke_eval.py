@@ -1,151 +1,160 @@
-"""
-src.experiments.run_smoke_eval
+"""Run evaluation on cybersecurity test datasets"""
 
-Day-2 runner:
-- loads prompts from config dataset_path (JSONL)
-- calls ModelRouter (mock or openai)
-- evaluates enabled metrics (factuality, toxicity, latency)
-- produces JSON report + threshold pass/fail
-"""
-
-from __future__ import annotations
-
-import argparse
+import asyncio
 import json
-import os
-from typing import Any, Dict, List
+import time
+from pathlib import Path
+from typing import List, Dict, Any
 
-from src.common.config import load_config
+from src.storage.database import get_database
+from src.storage.repository import EvaluationRepository
+from src.evaluation import get_evaluators
 from src.common.logger import get_logger
-from src.inference.model_router import ModelRouter
-from src.evaluation.latency import measure_latency_ms
-from src.evaluation.toxicity import evaluate_toxicity
-from src.evaluation.factuality import evaluate_factuality
 
 logger = get_logger(__name__)
 
 
-def _read_jsonl(path: str) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
+async def run_evaluation_batch(
+    dataset_path: Path, 
+    model_id: str = "claude-sonnet-4"
+) -> List[Dict[str, Any]]:
+    """
+    Run evaluations on a dataset
+    
+    Args:
+        dataset_path: Path to JSONL dataset file
+        model_id: Model identifier to use for evaluations
+    
+    Returns:
+        List of evaluation results
+    """
+    # Load dataset
+    with open(dataset_path) as f:
+        test_cases = [json.loads(line) for line in f]
+    
+    logger.info(f"Loaded {len(test_cases)} test cases from {dataset_path.name}")
+    
+    # Get evaluators
+    evaluators = get_evaluators()
+    logger.info(f"Using {len(evaluators)} evaluators: {[e.name for e in evaluators]}")
+    
+    # Run evaluations
+    db = get_database()
+    results = []
+    
+    for i, test_case in enumerate(test_cases, 1):
+        logger.info(f"Processing test case {i}/{len(test_cases)}")
+        
+        start_time = time.time()
+        
+        with db.get_session() as session:
+            repo = EvaluationRepository(session)
+            
+            # Create evaluation
+            evaluation = repo.create_evaluation({
+                'model_id': model_id,
+                'model_version': '1.0',
+                'prompt': test_case['prompt'],
+                'response': test_case['response'],
+                'use_case': test_case.get('use_case', 'general'),
+                'metadata': {'dataset': dataset_path.name}
+            })
+            
+            # Run evaluators
+            eval_results = {}
+            for evaluator in evaluators:
+                try:
+                    result = await evaluator.evaluate(
+                        prompt=test_case['prompt'],
+                        response=test_case['response'],
+                        ground_truth=test_case.get('ground_truth'),
+                        latency_ms=(time.time() - start_time) * 1000,
+                        use_case=test_case.get('use_case', 'general')
+                    )
+                    
+                    # Store metric
+                    repo.add_metric(
+                        eval_id=evaluation.id,
+                        metric_type=result.metric_type,
+                        value=result.value,
+                        metadata=result.metadata
+                    )
+                    
+                    eval_results[result.metric_type] = result.value
+                    
+                except Exception as e:
+                    logger.error(f"Evaluator {evaluator.name} failed: {e}")
+            
+            session.commit()
+            
+            results.append({
+                'test_case_id': i,
+                'evaluation_id': evaluation.id,
+                'metrics': eval_results
+            })
+    
+    # Summary
+    logger.info("=" * 60)
+    logger.info(f"EVALUATION SUMMARY: {dataset_path.name}")
+    logger.info("=" * 60)
+    logger.info(f"Total test cases: {len(test_cases)}")
+    logger.info(f"Total evaluations: {len(results)}")
+    
+    # Aggregate metrics
+    all_metrics = {}
+    for result in results:
+        for metric_type, value in result['metrics'].items():
+            if metric_type not in all_metrics:
+                all_metrics[metric_type] = []
+            all_metrics[metric_type].append(value)
+    
+    for metric_type, values in all_metrics.items():
+        if values:
+            avg = sum(values) / len(values)
+            logger.info(
+                f"{metric_type}: avg={avg:.2f}, "
+                f"min={min(values):.2f}, max={max(values):.2f}"
+            )
+    
+    logger.info("")
+    
+    return results
 
 
-def run_smoke(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    eval_cfg = cfg.get("evaluation", {}) or {}
-    thresholds = cfg.get("thresholds", {}) or {}
-
-    enabled = eval_cfg.get("enabled_metrics", []) or []
-    dataset_path = str(eval_cfg.get("dataset_path", "data/golden/smoke.jsonl"))
-    sample_size = int(eval_cfg.get("sample_size", 50))
-
-    if not os.path.exists(dataset_path):
-        raise FileNotFoundError(f"Dataset missing: {dataset_path}. Create it (data/golden/smoke.jsonl).")
-
-    rows = _read_jsonl(dataset_path)
-    if not rows:
-        raise ValueError(f"Dataset empty: {dataset_path}")
-
-    rows = rows[: min(sample_size, len(rows))]
-
-    router = ModelRouter(cfg)
-
-    per_item: List[Dict[str, Any]] = []
-    latency_samples: List[float] = []
-    toxicity_scores: List[float] = []
-    factuality_scores: List[float] = []
-
-    for item in rows:
-        prompt = item.get("prompt", "")
-        reference = item.get("reference")
-
-        # Measure inference latency (single call)
-        lat = measure_latency_ms(lambda: router.generate(prompt), repeats=1)
-        lat_ms = float(lat["latencies_ms"][0])
-        latency_samples.append(lat_ms)
-
-        resp = router.generate(prompt)
-        result: Dict[str, Any] = {
-            "id": item.get("id"),
-            "prompt": prompt,
-            "model": resp.model_name,
-            "provider": resp.provider,
-            "response": resp.text,
-            "latency_ms": lat_ms,
-        }
-
-        if "toxicity" in enabled:
-            tox = evaluate_toxicity(resp.text)
-            toxicity_scores.append(float(tox["score"]))
-            result["toxicity"] = tox
-
-        if "factuality" in enabled:
-            fac = evaluate_factuality(resp.text, reference=reference)
-            factuality_scores.append(float(fac["score"]))
-            result["factuality"] = fac
-
-        per_item.append(result)
-
-    # Aggregate
-    latency_samples_sorted = sorted(latency_samples)
-    p95_idx = int(round(0.95 * (len(latency_samples_sorted) - 1)))
-    p95_idx = max(0, min(p95_idx, len(latency_samples_sorted) - 1))
-    latency_p95 = float(latency_samples_sorted[p95_idx])
-
-    toxicity_mean = float(sum(toxicity_scores) / len(toxicity_scores)) if toxicity_scores else 0.0
-    factuality_mean = float(sum(factuality_scores) / len(factuality_scores)) if factuality_scores else 0.0
-
-    # Threshold checks
-    tox_max = float(thresholds.get("toxicity_max", 1.0))
-    lat_p95_max = float(thresholds.get("latency_p95_ms", 1e9))
-
-    checks = {
-        "toxicity_mean_ok": toxicity_mean <= tox_max,
-        "latency_p95_ok": latency_p95 <= lat_p95_max,
-    }
-    checks["all_ok"] = all(checks.values())
-
-    report = {
-        "environment": cfg.get("environment"),
-        "provider": cfg.get("inference", {}).get("provider"),
-        "default_model": cfg.get("inference", {}).get("default_model"),
-        "n_samples": len(rows),
-        "metrics": {
-            "latency_p95_ms": latency_p95,
-            "toxicity_mean": toxicity_mean,
-            "factuality_mean": factuality_mean,
-        },
-        "thresholds": {
-            "toxicity_max": tox_max,
-            "latency_p95_ms": lat_p95_max,
-        },
-        "checks": checks,
-        "items": per_item,
-    }
-    return report
-
-
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="Path to YAML config, e.g. configs/dev.yaml")
-    args = ap.parse_args()
-
-    cfg = load_config(args.config)
-    report = run_smoke(cfg)
-
-    os.makedirs("artifacts/reports", exist_ok=True)
-    out_path = "artifacts/reports/smoke_report.json"
-    with open(out_path, "w") as f:
-        json.dump(report, f, indent=2)
-
-    logger.info("Wrote report: %s", out_path)
-    logger.info("Checks: %s", report["checks"])
+async def main():
+    """Run evaluations on all test datasets"""
+    data_dir = Path(__file__).parent.parent.parent / "data" / "golden"
+    
+    datasets = [
+        data_dir / "smoke.jsonl",
+        data_dir / "threat_intel.jsonl",
+        data_dir / "malware_analysis.jsonl"
+    ]
+    
+    all_results = {}
+    
+    for dataset_path in datasets:
+        if dataset_path.exists():
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Running evaluations on: {dataset_path.name}")
+            logger.info(f"{'='*60}\n")
+            
+            try:
+                results = await run_evaluation_batch(dataset_path)
+                all_results[dataset_path.name] = results
+            except Exception as e:
+                logger.error(f"Failed to process {dataset_path.name}: {e}")
+        else:
+            logger.warning(f"Dataset not found: {dataset_path}")
+    
+    # Overall summary
+    logger.info("\n" + "=" * 60)
+    logger.info("OVERALL SUMMARY")
+    logger.info("=" * 60)
+    for dataset_name, results in all_results.items():
+        logger.info(f"{dataset_name}: {len(results)} evaluations completed")
+    logger.info("=" * 60 + "\n")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

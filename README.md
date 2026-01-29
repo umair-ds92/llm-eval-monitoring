@@ -120,7 +120,24 @@ pip install -r requirements.txt
 
 # Initialize database
 python scripts/init_db.py
+
+# Run evaluations
+python -m src.experiments.run_smoke_eval
+
+# Start API (optional - for external access)
+uvicorn src.api.main:app --reload --port 8000
+
+# Start dashboard
+python -m streamlit run src/monitoring/dashboard.py
+
 ```
+
+Access:
+- **API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs  
+- **Dashboard**: http://localhost:8501
+
+---
 
 ## Project Structure
 ```
@@ -140,7 +157,8 @@ llm-eval-monitoring/
 │   ├── inference/            # LLM routing
 │   ├── monitoring/           # Monitoring & alerts
 │   └── storage/              # Database layer
-├── tests/                    # Test suite
+├── tests/                    # Test 
+|── run_demo.sh
 ├── requirements.txt
 └── README.md
 ```
