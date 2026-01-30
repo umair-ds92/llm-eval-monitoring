@@ -3,7 +3,7 @@ environment: prod
 
 # Database Configuration
 database:
-  url: "postgresql://llm_eval_user:${DB_PASSWORD}@postgres:5432/llm_eval_prod"
+  url: "postgresql://llm_eval:llm_eval_pass@postgres:5432/llm_eval"
   echo: false
   pool_size: 20
   max_overflow: 40

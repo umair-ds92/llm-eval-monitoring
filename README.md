@@ -132,12 +132,56 @@ python -m streamlit run src/monitoring/dashboard.py
 
 ```
 
+## 🐳 Docker Deployment
+
+### Quick Start with Docker
+```bash
+# Option 1: Use make
+make demo-docker
+
+# Option 2: Use docker compose directly
+docker compose up -d
+
+# Option 3: Use dedicated script
+./run_docker.sh
+```
+
 Access:
 - **API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs  
+- **API Docs**: http://localhost:8000/docs
 - **Dashboard**: http://localhost:8501
+- **Database**: localhost:5432 (PostgreSQL)
+- **Redis**: localhost:6379
 
 ---
+
+### Docker Commands
+```bash
+# Start services
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop services
+docker compose down
+
+# Remove everything (including data)
+docker compose down -v
+
+# Rebuild images
+docker compose build --no-cache
+```
+
+### Production Deployment
+```bash
+# Use production config
+docker compose -f docker compose.prod.yml up -d
+
+# With environment variables
+docker compose --env-file .env.production up -d
+```
+
 
 ## Project Structure
 ```
@@ -147,6 +191,9 @@ llm-eval-monitoring/
 │   └── prod.yaml
 ├── data/
 │   ├── golden/                # Test datasets
+│   │   ├── smoke.jsonl
+│   │   ├── threat_intel.jsonl
+│   │   └── malware_analysis.jsonl
 │   └── prompts/               # Prompt templates
 ├── scripts/
 │   └── init_db.py            # Database initialization
@@ -154,11 +201,23 @@ llm-eval-monitoring/
 │   ├── api/                  # FastAPI application
 │   ├── common/               # Shared utilities
 │   ├── evaluation/           # Evaluation metrics
+│   │   └── ioc_extractor.py  # IOC extraction evaluator
+│   ├── experiments/
+│   │   └── run_smoke_eval.py # Evaluation runner
 │   ├── inference/            # LLM routing
 │   ├── monitoring/           # Monitoring & alerts
+│   │   └── dashboard.py      # Streamlit dashboard
 │   └── storage/              # Database layer
-├── tests/                    # Test 
-|── run_demo.sh
+├── tests/                    # Test suite
+├── Dockerfile                # API container image
+├── Dockerfile.dashboard      # Dashboard container image
+├── docker-compose.yml        # Development orchestration
+├── docker-compose.prod.yml   # Production orchestration
+├── .dockerignore            # Docker build exclusions
+├── Makefile                 # Docker management commands
+├── demo.sh                  # Unified demo launcher
+├── run_demo.sh              # Local demo script
+├── run_docker.sh            # Docker demo script
 ├── requirements.txt
 └── README.md
 ```

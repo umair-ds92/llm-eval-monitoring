@@ -1,0 +1,93 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: llm-eval-db
+    environment:
+      POSTGRES_USER: llm_eval
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-llm_eval_pass}  # Use env var or default
+      POSTGRES_DB: llm_eval
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql  # Optional: SQL init script
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U llm_eval"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llm-eval-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: llm-eval-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes  # Enable persistence
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - llm-eval-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm-eval-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://llm_eval:${DB_PASSWORD:-llm_eval_pass}@postgres:5432/llm_eval
+      - REDIS_URL=redis://redis:6379
+      - APP_ENV=prod
+      - PYTHONUNBUFFERED=1  # Better logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+      - ./logs:/app/logs  # Persist logs
+    restart: unless-stopped
+    networks:
+      - llm-eval-network
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: llm-eval-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - DATABASE_URL=postgresql://llm_eval:${DB_PASSWORD:-llm_eval_pass}@postgres:5432/llm_eval
+      - APP_ENV=prod
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ./data:/app/data
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - llm-eval-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  llm-eval-network:
+    driver: bridge
